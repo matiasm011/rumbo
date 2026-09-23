@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Rumbo</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="nav">
+      <div class="nav-copy">
+        <p class="nav-kicker">Sistema experto difuso</p>
+        <h1>Rumbo</h1>
+      </div>
+      <button type="button" class="nav-pill" id="abrir-dictamen" aria-controls="dictamen">
+        Dictamen
+      </button>
+    </header>
+
+    <main class="workspace">
+      <section class="chat" aria-label="Conversación">
+        <ol id="mensajes" class="mensajes"></ol>
+        <form id="formulario" class="composer">
+          <label class="sr-only" for="entrada">Mensaje</label>
+          <input
+            id="entrada"
+            name="mensaje"
+            autocomplete="off"
+            enterkeyhint="send"
+            placeholder="Contame cómo sos, o un 0 a 10"
+          />
+          <button type="submit" class="send" id="enviar" aria-label="Enviar" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 19V5M12 5l-6 6M12 5l6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+      </section>
+
+      <aside class="sheet" id="dictamen" aria-label="Dictamen">
+        <div class="sheet-handle" id="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-cabeza">
+          <h2>Dictamen</h2>
+          <button type="button" class="sheet-cerrar" id="cerrar-dictamen">Cerrar</button>
+        </div>
+        <p id="progreso" class="progreso">0 de 5 hechos</p>
+        <div id="hechos" class="hechos"></div>
+        <p id="estado-perfil" class="estado">El SED corre cuando el perfil está completo.</p>
+        <div id="barras" class="barras"></div>
+        <p id="carreras" class="carreras"></p>
+        <h3>Reglas disparadas</h3>
+        <ol id="reglas" class="reglas">
+          <li class="vacio">Todavía no hay inferencia.</li>
+        </ol>
+      </aside>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
