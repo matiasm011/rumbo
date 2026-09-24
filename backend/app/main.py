@@ -8,18 +8,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.dialogo import Dialogo
-from app.dominio import AREAS, Dictamen, Perfil
+from app.dominio import AREAS, DESCRIPCION_AREA, Dictamen, Perfil
+from app.generador import GeneradorRespuestas
 from app.motor_difuso import inferir
 from app.reglas import REGLAS
 
 ESTATICOS = Path(__file__).resolve().parent.parent / "static"
-dialogo = Dialogo()
+dialogo = Dialogo(generador=GeneradorRespuestas())
 app = FastAPI(title="Rumbo", version="1.0.0")
 
 
 class ChatIn(BaseModel):
     mensaje: str = ""
     sesion_id: str | None = None
+    valor: int | None = Field(default=None, ge=1, le=10)
 
 
 class PerfilIn(BaseModel):
@@ -37,7 +39,7 @@ def abrir_sesion():
 
 @app.post("/api/chat")
 def chat(cuerpo: ChatIn):
-    turno = dialogo.responder(cuerpo.sesion_id, cuerpo.mensaje)
+    turno = dialogo.responder(cuerpo.sesion_id, cuerpo.mensaje, cuerpo.valor)
     return _turno_json(turno)
 
 
@@ -77,6 +79,7 @@ def _turno_json(turno) -> dict:
         "sesion_id": turno.sesion_id,
         "hechos": turno.hechos,
         "pendientes": list(turno.pendientes),
+        "escala_pendiente": turno.escala_pendiente,
         "usado_llm": turno.usado_llm,
         "dictamen": _dictamen_json(turno.dictamen),
         "reglas_totales": turno.reglas_totales,
@@ -91,6 +94,7 @@ def _dictamen_json(dictamen: Dictamen | None) -> dict | None:
         "area_principal": {
             "area": dictamen.area_principal.area,
             "etiqueta": dictamen.area_principal.etiqueta,
+            "descripcion": DESCRIPCION_AREA[dictamen.area_principal.area],
             "valor": dictamen.area_principal.valor,
             "carreras": list(dictamen.area_principal.carreras),
         },
@@ -98,6 +102,7 @@ def _dictamen_json(dictamen: Dictamen | None) -> dict | None:
             {
                 "area": item.area,
                 "etiqueta": item.etiqueta,
+                "descripcion": DESCRIPCION_AREA[item.area],
                 "valor": item.valor,
                 "carreras": list(item.carreras),
             }

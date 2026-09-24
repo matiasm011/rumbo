@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.dialogo import Dialogo
+from app import main
 
 cliente = TestClient(app)
 
@@ -30,4 +32,20 @@ def test_inferir_directo():
     cuerpo = respuesta.json()
     assert respuesta.status_code == 200
     assert cuerpo["area_principal"]["area"] == "stem"
+    assert "Tecnología" in cuerpo["area_principal"]["descripcion"]
     assert cuerpo["reglas_disparadas"]
+
+
+def test_chat_expone_escala_y_recibe_valor_interactivo(monkeypatch):
+    monkeypatch.setattr(main, "dialogo", Dialogo())
+    inicio = main.abrir_sesion()
+    primero = main.chat(main.ChatIn(sesion_id=inicio["sesion_id"], mensaje="me gustan los números"))
+    assert primero["escala_pendiente"] is None
+    libre = main.chat(main.ChatIn(sesion_id=inicio["sesion_id"], mensaje="me gusta encontrar soluciones"))
+    assert libre["escala_pendiente"] == "analitico"
+    assert libre["hechos"] == {}
+
+    puntuado = main.chat(main.ChatIn(sesion_id=inicio["sesion_id"], valor=8))
+    assert puntuado["escala_pendiente"] is None
+    assert puntuado["hechos"] == {"analitico": 8.0}
+    assert puntuado["pendientes"][0] == "social"

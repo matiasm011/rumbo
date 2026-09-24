@@ -3,26 +3,126 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="color-scheme" content="light only" />
-  <meta name="theme-color" content="#ffffff" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#f5f5f7" />
   <title>Rumbo</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=1" />
+  <script>
+    (function () {
+      try {
+        var guardado = localStorage.getItem("tema");
+        var oscuro = guardado ? guardado === "oscuro" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (oscuro) {
+          document.documentElement.classList.add("tema-oscuro");
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", "#000000");
+        }
+      } catch (e) { /* localStorage no disponible: sigue el sistema */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/styles.css?v=16" />
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <g id="silueta-estante">
+        <rect x="14" y="30" width="16" height="70" rx="2.5" style="fill: var(--libro-1)"/>
+        <path class="d" d="M14 39 H30 M14 42 H30 M14 88 H30 M14 91 H30"/>
+        <path class="b" d="M22 52 V78"/>
+
+        <rect x="32" y="42" width="14" height="58" rx="2.5" style="fill: var(--libro-2)"/>
+        <path class="d" d="M32 50 H46 M32 92 H46"/>
+        <path class="b" d="M39 58 V82"/>
+
+        <rect x="48" y="22" width="19" height="78" rx="2.5" style="fill: var(--libro-3)"/>
+        <path class="d" d="M48 31 H67 M48 34 H67 M48 88 H67 M48 91 H67"/>
+        <rect class="etiqueta-lomo" x="52" y="46" width="11" height="24" rx="1.5"/>
+
+        <g transform="rotate(16 70 100)">
+          <rect x="70" y="36" width="16" height="64" rx="2.5" style="fill: var(--libro-4)"/>
+          <path class="d" d="M70 45 H86 M70 91 H86"/>
+          <path class="b" d="M78 56 V80"/>
+        </g>
+
+        <rect x="4" y="100" width="112" height="6" rx="2" style="fill: var(--tabla)"/>
+      </g>
+      <g id="silueta-pila">
+        <rect x="16" y="82" width="86" height="16" rx="2.5" style="fill: var(--libro-2)"/>
+        <rect class="pag" x="90" y="84" width="10" height="12" rx="1"/>
+        <path class="lin" d="M91 87 H99 M91 90 H99 M91 93 H99"/>
+        <path class="d" d="M26 82 V98 M29 82 V98"/>
+
+        <rect x="26" y="64" width="72" height="18" rx="2.5" style="fill: var(--libro-1)"/>
+        <rect class="pag" x="28" y="66" width="10" height="14" rx="1"/>
+        <path class="lin" d="M29 69 H37 M29 72.5 H37 M29 76 H37"/>
+        <path class="d" d="M86 64 V82 M89 64 V82"/>
+        <path class="b" d="M50 73 H76"/>
+
+        <rect x="20" y="48" width="66" height="16" rx="2.5" style="fill: var(--libro-4)"/>
+        <rect class="pag" x="74" y="50" width="10" height="12" rx="1"/>
+        <path class="lin" d="M75 53 H83 M75 56 H83 M75 59 H83"/>
+        <path class="d" d="M30 48 V64"/>
+        <path class="cinta" d="M56 48 V40 L59 43 L62 40 V48"/>
+      </g>
+      <g id="silueta-abierto">
+        <path d="M60 42 C46 34 26 34 8 38 V95 C26 91 46 91 60 99 C74 91 94 91 112 95 V38 C94 34 74 34 60 42 Z" style="fill: var(--libro-1)"/>
+        <path class="pag" d="M60 38 C48 30 30 30 14 34 V88 C30 84 48 84 60 92 Z"/>
+        <path class="pag" d="M60 38 C72 30 90 30 106 34 V88 C90 84 72 84 60 92 Z"/>
+        <path class="lin" d="M22 46 C32 43 44 43 52 47 M22 54 C32 51 44 51 52 55 M22 62 C32 59 44 59 52 63 M22 70 C32 67 40 67 46 69 M68 47 C76 43 88 43 98 46 M68 55 C76 51 88 51 98 54 M68 63 C76 59 88 59 98 62 M74 69 C80 67 88 67 98 70"/>
+        <path class="d" d="M60 38 V92"/>
+        <path class="cinta" d="M63 90 V106 L66 102 L69 106 V88"/>
+      </g>
+    </defs>
+  </svg>
+
+  <div class="libros-fondo" aria-hidden="true">
+    <svg class="abajo-izq" viewBox="0 0 120 120"><use href="#silueta-estante"/></svg>
+    <svg class="arriba-der" viewBox="0 0 120 120"><use href="#silueta-abierto"/></svg>
+    <svg class="centro-der" viewBox="0 0 120 120"><use href="#silueta-pila"/></svg>
+  </div>
+
   <div class="app">
     <header class="nav">
       <div class="nav-copy">
-        <p class="nav-kicker">Sistema experto difuso</p>
-        <h1>Rumbo</h1>
+        <p class="nav-eyebrow">Orientación vocacional</p>
+        <h1>
+          <span class="nav-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="9.2"/>
+              <path d="M15.8 8.2l-2.3 5.3-5.3 2.3 2.3-5.3 5.3-2.3z"/>
+            </svg>
+          </span>
+          Rumbo
+        </h1>
       </div>
-      <button type="button" class="nav-pill" id="abrir-dictamen" aria-controls="dictamen">
-        Dictamen
-      </button>
+      <div class="nav-acciones">
+        <button type="button" class="tema-toggle" id="tema-toggle" aria-label="Cambiar a modo oscuro" aria-pressed="false">
+          <svg class="tema-icono" viewBox="0 0 24 24" aria-hidden="true">
+            <mask id="tema-mascara">
+              <rect width="24" height="24" fill="#fff"/>
+              <circle class="luna-sombra" cx="24" cy="6" r="6.5" fill="#000"/>
+            </mask>
+            <circle class="sol-nucleo" cx="12" cy="12" r="5.5" fill="currentColor" mask="url(#tema-mascara)"/>
+            <g class="sol-rayos" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <line x1="12" y1="2.4" x2="12" y2="4.4"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(45 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(90 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(135 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(180 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(225 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(270 12 12)"/>
+              <line x1="12" y1="2.4" x2="12" y2="4.4" transform="rotate(315 12 12)"/>
+            </g>
+          </svg>
+        </button>
+        <button type="button" class="nav-pill" id="abrir-dictamen" aria-controls="dictamen" aria-expanded="false">
+          Tu mapa
+        </button>
+      </div>
     </header>
 
     <main class="workspace">
       <section class="chat" aria-label="Conversación">
-        <ol id="mensajes" class="mensajes"></ol>
+        <ol id="mensajes" class="mensajes" role="log" aria-live="polite" aria-relevant="additions"></ol>
         <form id="formulario" class="composer">
           <label class="sr-only" for="entrada">Mensaje</label>
           <input
@@ -30,7 +130,7 @@
             name="mensaje"
             autocomplete="off"
             enterkeyhint="send"
-            placeholder="Contame cómo sos, o un 0 a 10"
+            placeholder="Contame qué te gusta o preguntame algo…"
           />
           <button type="submit" class="send" id="enviar" aria-label="Enviar" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -40,24 +140,36 @@
         </form>
       </section>
 
-      <aside class="sheet" id="dictamen" aria-label="Dictamen">
+      <div class="sheet-scrim" id="sheet-scrim" aria-hidden="true"></div>
+      <aside class="sheet" id="dictamen" aria-label="Tu mapa vocacional" tabindex="-1">
         <div class="sheet-handle" id="sheet-handle" aria-hidden="true"></div>
         <div class="sheet-cabeza">
-          <h2>Dictamen</h2>
+          <h2>Tu mapa vocacional</h2>
           <button type="button" class="sheet-cerrar" id="cerrar-dictamen">Cerrar</button>
         </div>
-        <p id="progreso" class="progreso">0 de 5 hechos</p>
-        <div id="hechos" class="hechos"></div>
-        <p id="estado-perfil" class="estado">El SED corre cuando el perfil está completo.</p>
-        <div id="barras" class="barras"></div>
-        <p id="carreras" class="carreras"></p>
-        <h3>Reglas disparadas</h3>
-        <ol id="reglas" class="reglas">
-          <li class="vacio">Todavía no hay inferencia.</li>
-        </ol>
+        <section class="grupo carreras-card" id="carreras-card" hidden>
+          <p class="carreras-eyebrow">Carreras para explorar</p>
+          <p class="carreras-area" id="carreras-area"></p>
+          <ul class="carreras-lista" id="carreras"></ul>
+        </section>
+        <section class="grupo">
+          <p id="progreso" class="progreso">Vamos conociendo tus intereses</p>
+          <div id="hechos" class="hechos"></div>
+        </section>
+        <section class="grupo">
+          <p id="estado-perfil" class="estado">Cuando terminemos de charlar, vas a ver algunas opciones para explorar acá.</p>
+          <div id="barras" class="barras"></div>
+        </section>
+        <details class="detalle-reglas" id="detalle-reglas" hidden>
+          <summary>Cómo se calculó este resultado</summary>
+          <p>El sistema compara lo que contaste con 25 reglas. Estas son las que influyeron en tu resultado:</p>
+          <ol id="reglas" class="reglas">
+            <li class="vacio">Todavía no hay resultado.</li>
+          </ol>
+        </details>
       </aside>
     </main>
   </div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>

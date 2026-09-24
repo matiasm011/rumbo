@@ -35,6 +35,14 @@ ETIQUETAS_AREA = {
     "negocios": "Negocios",
 }
 
+DESCRIPCION_AREA = {
+    "stem": "Ciencia, Tecnología, Ingeniería y Matemática",
+    "salud": "Medicina, cuidado y ciencias de la vida",
+    "sociales": "Personas, educación, derecho y comunidad",
+    "arte": "Diseño, expresión y comunicación",
+    "negocios": "Gestión, economía y emprendimiento",
+}
+
 CARRERAS = {
     "stem": ("Ingeniería", "Ciencias de datos", "Sistemas", "Ciencias exactas"),
     "salud": ("Medicina", "Enfermería", "Kinesiología", "Nutrición"),
@@ -45,23 +53,23 @@ CARRERAS = {
 
 PREGUNTAS = {
     "analitico": (
-        "¿Qué tanto te llevan las matemáticas, la lógica o armar sistemas? "
-        "Podés decir un número del 0 al 10 o contarlo con tus palabras."
+        "Para empezar, ¿cómo te llevás con los números, los acertijos o resolver problemas?"
     ),
     "social": (
-        "¿Te ves trabajando con personas: enseñar, ayudar, negociar, acompañar? "
-        "0 es casi nada, 10 es el centro de lo que querés hacer."
+        "¿Y qué onda trabajar con otras personas, por ejemplo ayudando, enseñando o escuchando?"
     ),
     "creativo": (
-        "¿Cuánto pesa crear, diseñar o expresar ideas en tu día a día?"
+        "¿Te gusta crear cosas, dibujar, diseñar o encontrar formas nuevas de expresar ideas?"
     ),
     "ciencias_vida": (
-        "¿Te interesa el cuerpo, la biología, la salud o entender cómo funciona lo vivo?"
+        "¿Te despierta curiosidad la biología, la salud o entender cómo funciona el cuerpo?"
     ),
     "seguridad_laboral": (
-        "¿Qué tan importante es para vos una salida laboral estable y con demanda?"
+        "Y pensando en el futuro, ¿cuánto te importa que una carrera tenga trabajo estable?"
     ),
 }
+
+INDICACION_ESCALA = "Elegí del 1 al 10 en la escala de abajo."
 
 
 @dataclass(frozen=True)

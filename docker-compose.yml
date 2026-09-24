@@ -14,8 +14,7 @@ services:
       - ollama
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c"]
-    command: sleep 8 && ollama pull llama3.2:3b
+    entrypoint: ["/bin/sh", "-c", "sleep 8 && ollama pull llama3.2:3b"]
     restart: "no"
 
   app:

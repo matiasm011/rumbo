@@ -6,6 +6,14 @@ const ETIQUETAS = {
   seguridad_laboral: "Seguridad laboral",
 };
 
+const PREGUNTAS_ESCALA = {
+  analitico: "¿Cuánto te interesan los números y resolver problemas?",
+  social: "¿Cuánto te gusta trabajar con otras personas?",
+  creativo: "¿Cuánto te gusta crear o diseñar?",
+  ciencias_vida: "¿Cuánto te interesan la biología y la salud?",
+  seguridad_laboral: "¿Cuánto valorás la estabilidad laboral?",
+};
+
 const mensajes = document.getElementById("mensajes");
 const form = document.getElementById("formulario");
 const entrada = document.getElementById("entrada");
@@ -13,16 +21,59 @@ const enviar = document.getElementById("enviar");
 const estadoPerfil = document.getElementById("estado-perfil");
 const barras = document.getElementById("barras");
 const carreras = document.getElementById("carreras");
+const carrerasCard = document.getElementById("carreras-card");
+const carrerasArea = document.getElementById("carreras-area");
 const reglas = document.getElementById("reglas");
+const detalleReglas = document.getElementById("detalle-reglas");
 const hechosNodo = document.getElementById("hechos");
 const progreso = document.getElementById("progreso");
 const sheetEl = document.getElementById("dictamen");
 const abrirDictamen = document.getElementById("abrir-dictamen");
 const cerrarDictamen = document.getElementById("cerrar-dictamen");
 const handle = document.getElementById("sheet-handle");
+const scrim = document.getElementById("sheet-scrim");
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let sesionId = null;
+let esperando = false;
+
+function vibrar(patron) {
+  if (navigator.vibrate) navigator.vibrate(patron);
+}
+
+const temaToggle = document.getElementById("tema-toggle");
+const mqOscuro = window.matchMedia("(prefers-color-scheme: dark)");
+
+function aplicarTema(oscuro, animar) {
+  const raiz = document.documentElement;
+  if (animar) {
+    // Cross-fade de colores: no es movimiento vestibular, aplica siempre
+    // (es justo lo que Apple pide para cambios de tema con reduced-motion).
+    raiz.classList.add("transicion-tema");
+    void raiz.offsetHeight; // reflow: la transición queda activa antes del cambio
+    setTimeout(() => raiz.classList.remove("transicion-tema"), 380);
+  }
+  raiz.classList.toggle("tema-oscuro", oscuro);
+  temaToggle.setAttribute("aria-pressed", String(oscuro));
+  temaToggle.setAttribute("aria-label", oscuro ? "Cambiar a modo claro" : "Cambiar a modo oscuro");
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", oscuro ? "#000000" : "#f5f5f7");
+}
+
+temaToggle.addEventListener("click", () => {
+  const oscuro = !document.documentElement.classList.contains("tema-oscuro");
+  try { localStorage.setItem("tema", oscuro ? "oscuro" : "claro"); } catch (e) { /* sin persistencia */ }
+  vibrar(6);
+  aplicarTema(oscuro, true);
+});
+
+mqOscuro.addEventListener("change", (evento) => {
+  let guardado = null;
+  try { guardado = localStorage.getItem("tema"); } catch (e) { /* sin persistencia */ }
+  if (!guardado) aplicarTema(evento.matches, true);
+});
+
+aplicarTema(document.documentElement.classList.contains("tema-oscuro"), false);
+let escalaActiva = null;
 
 function escritorio() {
   return window.matchMedia("(min-width: 900px)").matches;
@@ -46,6 +97,7 @@ function springStep(current, target, velocity, dt, damping, response) {
 function animateSpring(read, write, target, opts = {}) {
   const damping = opts.damping ?? 1;
   const response = opts.response ?? 0.35;
+  const umbral = opts.umbral ?? 0.4;
   let velocity = opts.velocity ?? 0;
   return new Promise((resolve) => {
     if (reduceMotion.matches) {
@@ -62,7 +114,7 @@ function animateSpring(read, write, target, opts = {}) {
       current = next.current;
       velocity = next.velocity;
       write(current);
-      if (Math.abs(current - target) < 0.4 && Math.abs(velocity) < 8) {
+      if (Math.abs(current - target) < umbral && Math.abs(velocity) < umbral * 20) {
         write(target);
         resolve();
         return;
@@ -76,14 +128,32 @@ function animateSpring(read, write, target, opts = {}) {
 const sheet = {
   y: 0,
   v: 0,
-  abierta: false,
+  detente: "cerrada",
   arrastre: null,
   raf: 0,
   historia: [],
 };
 
+function alturaSheet() {
+  return Math.max(sheetEl.getBoundingClientRect().height, window.innerHeight * 0.92);
+}
+
 function distanciaCerrada() {
-  return Math.max(sheetEl.getBoundingClientRect().height, window.innerHeight * 0.92) + 24;
+  return alturaSheet() + 24;
+}
+
+function distanciaMedia() {
+  return Math.round(alturaSheet() * 0.52);
+}
+
+function yDeDetente(detente) {
+  if (detente === "abierta") return 0;
+  if (detente === "media") return distanciaMedia();
+  return distanciaCerrada();
+}
+
+function inicioSheet() {
+  return parseFloat(window.getComputedStyle(sheetEl).top);
 }
 
 function aplicarY(y) {
@@ -100,7 +170,6 @@ function springSheet(target, velocity) {
   detenerSpring();
   if (escritorio() || reduceMotion.matches) {
     aplicarY(0);
-    sheet.abierta = target === 0;
     return;
   }
   let current = sheet.y;
@@ -114,6 +183,7 @@ function springSheet(target, velocity) {
     const next = springStep(current, target, v, dt, damping, response);
     current = next.current;
     v = next.velocity;
+    sheet.v = v;
     aplicarY(current);
     if (Math.abs(current - target) < 0.5 && Math.abs(v) < 10) {
       aplicarY(target);
@@ -126,25 +196,41 @@ function springSheet(target, velocity) {
   sheet.raf = requestAnimationFrame(tick);
 }
 
-function abrirSheet() {
-  sheet.abierta = true;
-  springSheet(0, sheet.v);
+function estadoSheet(detente) {
+  const visible = escritorio() || detente !== "cerrada";
+  sheetEl.inert = !visible;
+  sheetEl.setAttribute("aria-hidden", String(!visible));
+  sheetEl.classList.toggle("is-closed", !visible);
+  abrirDictamen.setAttribute("aria-expanded", String(detente !== "cerrada"));
+  scrim.classList.toggle("visible", detente === "abierta" && !escritorio());
+}
+
+function irADetente(detente, velocity) {
+  sheet.detente = detente;
+  estadoSheet(detente);
+  springSheet(yDeDetente(detente), velocity);
+}
+
+function abrirSheet(enfocar) {
+  irADetente("media", sheet.v);
+  if (enfocar && !escritorio()) sheetEl.focus();
 }
 
 function cerrarSheet() {
-  sheet.abierta = false;
-  springSheet(distanciaCerrada(), sheet.v);
+  irADetente("cerrada", sheet.v);
+  if (!escritorio()) abrirDictamen.focus();
 }
 
 function iniciarSheet() {
   const colocar = () => {
     if (escritorio()) {
       aplicarY(0);
-      sheet.abierta = true;
+      sheet.detente = "abierta";
+      estadoSheet("abierta");
       return;
     }
-    aplicarY(distanciaCerrada());
-    sheet.abierta = false;
+    aplicarY(yDeDetente(sheet.detente));
+    estadoSheet(sheet.detente);
   };
   colocar();
   requestAnimationFrame(colocar);
@@ -163,7 +249,7 @@ function onPointerDown(evento) {
 
 function onPointerMove(evento) {
   if (!sheet.arrastre) return;
-  const abiertoTop = window.innerHeight * 0.08;
+  const abiertoTop = inicioSheet();
   let top = evento.clientY - sheet.arrastre.offset;
   const cerradoTop = abiertoTop + distanciaCerrada();
   if (top < abiertoTop) {
@@ -189,23 +275,74 @@ function velocidadRelease() {
 function onPointerUp() {
   if (!sheet.arrastre) return;
   sheet.arrastre = null;
+  const hist = sheet.historia;
+  const primero = hist[0];
+  const ultimo = hist[hist.length - 1];
   const v = velocidadRelease();
   sheet.v = v;
+
+  // Tap en el grabber: cicla entre detent medio y completo
+  if (Math.abs(ultimo.y - primero.y) < 8 && ultimo.t - primero.t < 350) {
+    vibrar(6);
+    irADetente(sheet.detente === "abierta" ? "media" : "abierta", 0);
+    return;
+  }
+
   const proyectado = sheet.y + project(v);
-  const medio = distanciaCerrada() / 2;
-  const cerrar = v > 650 || proyectado > medio;
-  sheet.abierta = !cerrar;
-  springSheet(cerrar ? distanciaCerrada() : 0, v);
+  const puntos = [
+    { detente: "abierta", y: 0 },
+    { detente: "media", y: distanciaMedia() },
+    { detente: "cerrada", y: distanciaCerrada() },
+  ];
+  let destino;
+  if (Math.abs(v) > 650) {
+    // Con momentum manda la dirección del gesto: un detent hacia arriba o abajo
+    const actual = puntos.findIndex((p) => p.detente === sheet.detente);
+    const paso = v < 0 ? -1 : 1;
+    destino = puntos[Math.min(puntos.length - 1, Math.max(0, actual + paso))];
+  } else {
+    destino = puntos.reduce((mejor, p) =>
+      Math.abs(p.y - proyectado) < Math.abs(mejor.y - proyectado) ? p : mejor
+    );
+  }
+  vibrar(8);
+  irADetente(destino.detente, v);
+  if (destino.detente === "cerrada") abrirDictamen.focus();
 }
 
 handle.addEventListener("pointerdown", onPointerDown);
 handle.addEventListener("pointermove", onPointerMove);
 handle.addEventListener("pointerup", onPointerUp);
 handle.addEventListener("pointercancel", onPointerUp);
-abrirDictamen.addEventListener("click", abrirSheet);
+abrirDictamen.addEventListener("click", () => abrirSheet(true));
 cerrarDictamen.addEventListener("click", cerrarSheet);
+scrim.addEventListener("click", cerrarSheet);
+document.addEventListener("keydown", (evento) => {
+  if (evento.key === "Escape" && sheet.detente !== "cerrada" && !escritorio()) cerrarSheet();
+  if (evento.key === "Tab" && sheet.detente === "abierta" && !escritorio()) {
+    const focables = [...sheetEl.querySelectorAll("button, input, a[href], [tabindex]:not([tabindex='-1'])")]
+      .filter((elemento) => !elemento.disabled && elemento.getClientRects().length);
+    if (!focables.length) return;
+    const primero = focables[0];
+    const ultimo = focables[focables.length - 1];
+    if (evento.shiftKey && (document.activeElement === primero || !sheetEl.contains(document.activeElement))) {
+      evento.preventDefault();
+      ultimo.focus();
+    } else if (!evento.shiftKey && (document.activeElement === ultimo || !sheetEl.contains(document.activeElement))) {
+      evento.preventDefault();
+      primero.focus();
+    }
+  }
+});
 window.addEventListener("resize", () => {
-  if (escritorio()) aplicarY(0);
+  detenerSpring();
+  if (escritorio()) {
+    aplicarY(0);
+    sheet.detente = "abierta";
+  } else {
+    aplicarY(yDeDetente(sheet.detente));
+  }
+  estadoSheet(sheet.detente);
 });
 
 function pressable(boton) {
@@ -217,59 +354,175 @@ function pressable(boton) {
   boton.addEventListener("pointerleave", up);
 }
 
-[enviar, abrirDictamen, cerrarDictamen].forEach(pressable);
+[enviar, abrirDictamen, cerrarDictamen, temaToggle].forEach(pressable);
 
 entrada.addEventListener("input", () => {
-  enviar.disabled = entrada.value.trim() === "";
+  enviar.disabled = esperando || !sesionId || entrada.value.trim() === "";
 });
 
-function agregar(texto, quien) {
+function inflar(item, desde, damping) {
+  let s = desde;
+  item.style.transform = `scale(${s})`;
+  return animateSpring(() => s, (val) => {
+    s = val;
+    item.style.transform = `scale(${val})`;
+  }, 1, { response: 0.42, damping, umbral: 0.002 });
+}
+
+function viajar(item, origen) {
+  const inicial = item.getBoundingClientRect();
+  const desde = origen.getBoundingClientRect();
+  const centroX = origen === entrada
+    ? desde.left + Math.min(inicial.width, desde.width) / 2
+    : desde.left + desde.width / 2;
+  const centroY = desde.top + desde.height / 2;
+  let x = centroX + inicial.width / 2 - inicial.right;
+  let y = centroY + inicial.height / 2 - inicial.bottom;
+
+  const globo = document.createElement("div");
+  globo.className = "globo-viajero";
+  globo.textContent = item.textContent;
+  globo.style.width = `${inicial.width}px`;
+  const pintar = () => {
+    const r = item.getBoundingClientRect();
+    globo.style.left = `${r.left}px`;
+    globo.style.top = `${r.top}px`;
+    globo.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+  };
+  pintar();
+  document.body.appendChild(globo);
+
+  return Promise.all([
+    animateSpring(() => x, (val) => { x = val; pintar(); }, 0, { response: 0.4, damping: 1 }),
+    animateSpring(() => y, (val) => { y = val; pintar(); }, 0, { response: 0.32, damping: 1 }),
+  ]).then(() => {
+    globo.remove();
+    item.style.opacity = "1";
+  });
+}
+
+function agregar(texto, quien, origen) {
   const item = document.createElement("li");
   item.className = quien;
   item.textContent = texto;
-  item.style.opacity = "0";
-  item.style.transform = "translate3d(0, 10px, 0)";
   mensajes.appendChild(item);
-  let y = 10;
+  mensajes.scrollTop = mensajes.scrollHeight;
+  if (reduceMotion.matches) {
+    item.llegada = Promise.resolve();
+    return item;
+  }
+  if (origen) {
+    item.style.opacity = "0";
+    item.llegada = viajar(item, origen);
+    return item;
+  }
   let o = 0;
-  animateSpring(() => y, (val) => {
-    y = val;
-    item.style.transform = `translate3d(0, ${val}px, 0)`;
-  }, 0, { response: 0.32, damping: 1 });
+  item.style.opacity = "0";
   animateSpring(() => o, (val) => {
     o = val;
     item.style.opacity = String(val);
-  }, 1, { response: 0.3, damping: 1 });
-  item.scrollIntoView({ block: "end", behavior: reduceMotion.matches ? "auto" : "smooth" });
+  }, 1, { response: 0.2, damping: 1, umbral: 0.01 });
+  item.llegada = inflar(item, 0.3, 0.55);
+  return item;
+}
+
+function mostrarEscala(clave) {
+  if (escalaActiva) {
+    if (!escalaActiva.dataset.seleccionado) escalaActiva.remove();
+    escalaActiva = null;
+  }
+  entrada.placeholder = clave
+    ? "Elegí un número arriba o escribilo acá…"
+    : "Contame qué te gusta o preguntame algo…";
+  if (!clave || !PREGUNTAS_ESCALA[clave]) return;
+
+  const item = agregar("", "bot escala-card");
+  const titulo = document.createElement("p");
+  titulo.className = "escala-titulo";
+  titulo.textContent = PREGUNTAS_ESCALA[clave];
+  item.appendChild(titulo);
+
+  const opciones = document.createElement("div");
+  opciones.className = "escala-opciones";
+  opciones.setAttribute("role", "group");
+  opciones.setAttribute("aria-label", `Elegí del 1 al 10: ${ETIQUETAS[clave]}`);
+  for (let valor = 1; valor <= 10; valor += 1) {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "escala-opcion";
+    boton.textContent = String(valor);
+    boton.setAttribute("aria-label", `${valor} de 10 para ${ETIQUETAS[clave]}`);
+    boton.setAttribute("aria-pressed", "false");
+    boton.addEventListener("click", () => enviarValor(valor, item));
+    opciones.appendChild(boton);
+  }
+  item.appendChild(opciones);
+
+  const extremos = document.createElement("div");
+  extremos.className = "escala-extremos";
+  extremos.innerHTML = "<span>Poco</span><span>Mucho</span>";
+  item.appendChild(extremos);
+  escalaActiva = item;
+  mensajes.scrollTop = mensajes.scrollHeight;
+}
+
+function agregarEscribiendo() {
+  const item = agregar("", "bot typing");
+  item.innerHTML = `
+    <svg class="spinner" viewBox="0 0 24 24" role="status" aria-label="Rumbo está escribiendo">
+      <circle cx="12" cy="12" r="9" fill="none" />
+    </svg>`;
+  return item;
+}
+
+function llenarCarreras(lista, nombres) {
+  lista.replaceChildren(...nombres.map((nombre) => {
+    const fila = document.createElement("li");
+    fila.textContent = nombre;
+    return fila;
+  }));
+}
+
+function popCarreras() {
+  let o = 0;
+  carrerasCard.style.opacity = "0";
+  animateSpring(() => o, (val) => {
+    o = val;
+    carrerasCard.style.opacity = String(val);
+  }, 1, { response: 0.25, damping: 1, umbral: 0.01 });
+  inflar(carrerasCard, 0.6, 0.5);
 }
 
 function pintarHechos(hechos) {
   const claves = Object.keys(ETIQUETAS);
   const listos = Object.keys(hechos || {}).length;
-  progreso.textContent = `${listos} de ${claves.length} hechos`;
+  progreso.textContent = listos
+    ? `Ya charlamos sobre ${listos} de ${claves.length} temas`
+    : "Vamos a ir armando este mapa juntos";
   hechosNodo.innerHTML = "";
   claves.forEach((clave) => {
+    if (!hechos || !(clave in hechos)) return;
     const chip = document.createElement("span");
-    const tiene = hechos && clave in hechos;
-    chip.className = tiene ? "chip on" : "chip";
-    chip.textContent = tiene
-      ? `${ETIQUETAS[clave]} ${Number(hechos[clave]).toFixed(0)}`
-      : ETIQUETAS[clave];
+    chip.className = "chip on";
+    chip.textContent = `${ETIQUETAS[clave]} ${Number(hechos[clave]).toFixed(0)}`;
     hechosNodo.appendChild(chip);
   });
 }
 
 function pintarDictamen(dictamen, hechos) {
   pintarHechos(hechos);
+  detalleReglas.hidden = !dictamen;
+  const carrerasNuevas = Boolean(dictamen) && carrerasCard.hidden;
+  carrerasCard.hidden = !dictamen;
   if (!dictamen) {
-    estadoPerfil.textContent = "El SED corre cuando el perfil está completo.";
+    estadoPerfil.textContent = "Cuando terminemos de charlar, vas a ver algunas opciones para explorar acá.";
     barras.innerHTML = "";
-    carreras.textContent = "";
-    reglas.innerHTML = '<li class="vacio">Todavía no hay inferencia.</li>';
+    carreras.replaceChildren();
+    reglas.innerHTML = '<li class="vacio">Todavía no hay resultado.</li>';
     return;
   }
 
-  estadoPerfil.textContent = dictamen.resumen;
+  estadoPerfil.textContent = `${dictamen.area_principal.etiqueta} aparece como la afinidad más alta. Tomalo como una pista para investigar, no como una decisión cerrada.`;
   barras.innerHTML = "";
   dictamen.afinidades.forEach((item) => {
     const fila = document.createElement("div");
@@ -277,7 +530,7 @@ function pintarDictamen(dictamen, hechos) {
     fila.className = principal ? "barra principal" : "barra";
     const objetivo = Math.max(0.04, Math.min(1, item.valor / 10));
     fila.innerHTML = `
-      <span>${item.etiqueta}</span>
+      <span>${item.etiqueta}<small>${item.descripcion || ""}</small></span>
       <span class="pista"><span class="fill"></span></span>
       <span>${item.valor.toFixed(1)}</span>
     `;
@@ -288,9 +541,11 @@ function pintarDictamen(dictamen, hechos) {
     animateSpring(() => escala, (val) => {
       escala = val;
       fill.style.transform = `scaleX(${val})`;
-    }, objetivo, { response: 0.45, damping: 1 });
+    }, objetivo, { response: 0.45, damping: 1, umbral: 0.002 });
   });
-  carreras.textContent = `Carreras ilustrativas: ${dictamen.area_principal.carreras.join(", ")}.`;
+  carrerasArea.textContent = dictamen.area_principal.etiqueta;
+  llenarCarreras(carreras, dictamen.area_principal.carreras);
+  if (carrerasNuevas) popCarreras();
   reglas.innerHTML = "";
   dictamen.reglas_disparadas.forEach((regla) => {
     const item = document.createElement("li");
@@ -301,42 +556,102 @@ function pintarDictamen(dictamen, hechos) {
   if (!escritorio()) abrirSheet();
 }
 
-async function llamar(url, cuerpo) {
-  const respuesta = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(cuerpo || {}),
-  });
-  if (!respuesta.ok) throw new Error("backend");
-  return respuesta.json();
+async function llamar(url, cuerpo, timeoutMs = 110000) {
+  const control = new AbortController();
+  const temporizador = setTimeout(() => control.abort(), timeoutMs);
+  try {
+    const respuesta = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cuerpo || {}),
+      signal: control.signal,
+    });
+    if (!respuesta.ok) throw new Error("backend");
+    return respuesta.json();
+  } finally {
+    clearTimeout(temporizador);
+  }
 }
 
 async function abrir() {
   const turno = await llamar("/api/sesion", {});
   sesionId = turno.sesion_id;
   agregar(turno.respuesta, "bot");
+  mostrarEscala(turno.escala_pendiente);
   pintarDictamen(turno.dictamen, turno.hechos);
+  enviar.disabled = entrada.value.trim() === "";
+  if (escritorio()) entrada.focus();
+}
+
+async function enviarTurno(cuerpo, textoVisible, origen, alFallar) {
+  if (esperando || !sesionId) return;
+  esperando = true;
+  enviar.disabled = true;
+  if (escalaActiva) {
+    escalaActiva.querySelectorAll("button").forEach((boton) => { boton.disabled = true; });
+  }
+  const burbuja = agregar(textoVisible, "user", origen);
+  vibrar(10);
+  const pedido = llamar("/api/chat", { sesion_id: sesionId, ...cuerpo });
+  pedido.catch(() => {});
+  await burbuja.llegada;
+  const escribiendo = agregarEscribiendo();
+  try {
+    const turno = await pedido;
+    sesionId = turno.sesion_id;
+    escribiendo.remove();
+    agregar(turno.respuesta, "bot");
+    mostrarEscala(turno.escala_pendiente);
+    pintarDictamen(turno.dictamen, turno.hechos);
+  } catch (error) {
+    escribiendo.remove();
+    burbuja.remove();
+    if (alFallar) alFallar();
+    if (error && error.name === "AbortError") {
+      agregar("Me está tomando más tiempo del esperado. Podés probar de nuevo.", "bot");
+    } else {
+      agregar("Se cortó la conexión. Podés probar de nuevo.", "bot");
+    }
+  } finally {
+    esperando = false;
+    enviar.disabled = entrada.value.trim() === "";
+    if (escalaActiva && !escalaActiva.dataset.seleccionado) {
+      escalaActiva.querySelectorAll("button").forEach((boton) => { boton.disabled = false; });
+    }
+  }
+}
+
+async function enviarValor(valor, item) {
+  if (esperando || escalaActiva !== item) return;
+  item.dataset.seleccionado = "true";
+  item.querySelectorAll("button").forEach((boton) => {
+    boton.disabled = true;
+    const seleccionado = Number(boton.textContent) === valor;
+    boton.classList.toggle("selected", seleccionado);
+    boton.setAttribute("aria-pressed", String(seleccionado));
+  });
+  await enviarTurno({ valor }, `${valor}/10`, item.querySelector(".escala-opcion.selected"), () => {
+    delete item.dataset.seleccionado;
+    item.querySelectorAll("button").forEach((boton) => {
+      boton.disabled = false;
+      boton.classList.remove("selected");
+      boton.setAttribute("aria-pressed", "false");
+    });
+  });
 }
 
 form.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const texto = entrada.value.trim();
-  if (!texto) return;
+  if (!texto || esperando || !sesionId) return;
   entrada.value = "";
-  enviar.disabled = true;
-  agregar(texto, "user");
-  try {
-    const turno = await llamar("/api/chat", { sesion_id: sesionId, mensaje: texto });
-    sesionId = turno.sesion_id;
-    agregar(turno.respuesta, "bot");
-    pintarDictamen(turno.dictamen, turno.hechos);
-  } catch (error) {
-    agregar("No pude hablar con el backend. ¿Está levantado el compose?", "bot");
-  }
+  await enviarTurno({ mensaje: texto }, texto, entrada, () => {
+    if (!entrada.value.trim()) entrada.value = texto;
+  });
 });
 
 iniciarSheet();
 pintarHechos({});
 abrir().catch(() => {
-  agregar("No pude iniciar la sesión. Levantá el backend y recargá.", "bot");
+  agregar("No pude abrir la charla. Probá recargar la página en un momento.", "bot");
 });
