@@ -34,6 +34,8 @@ const handle = document.getElementById("sheet-handle");
 const scrim = document.getElementById("sheet-scrim");
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+// Pausa mínima antes de mostrar la respuesta: parece que Rumbo piensa.
+const MINIMO_PENSANDO_MS = 1000;
 let sesionId = null;
 let esperando = false;
 
@@ -583,6 +585,72 @@ async function abrir() {
   if (escritorio()) entrada.focus();
 }
 
+async function pedirTurnoClasico(cuerpo, timeoutMs) {
+  return llamar("/api/chat", cuerpo, timeoutMs);
+}
+
+async function leerStreamTurno(cuerpo, alTurno, timeoutMs = 110000) {
+  const control = new AbortController();
+  const temporizador = setTimeout(() => control.abort(), timeoutMs);
+  let eventos = 0;
+  const consumir = (turno, esFinal) => {
+    eventos += 1;
+    alTurno(turno, esFinal);
+  };
+  try {
+    let respuesta;
+    try {
+      respuesta = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify(cuerpo || {}),
+        signal: control.signal,
+      });
+    } catch (error) {
+      if (error && error.name === "AbortError") throw error;
+      consumir(await pedirTurnoClasico(cuerpo, timeoutMs), true);
+      return;
+    }
+    if (!respuesta.ok || !respuesta.body) {
+      consumir(await pedirTurnoClasico(cuerpo, timeoutMs), true);
+      return;
+    }
+    const lector = respuesta.body.getReader();
+    const decodificador = new TextDecoder();
+    let buffer = "";
+    const procesar = (trozo) => {
+      buffer += trozo;
+      let fin;
+      while ((fin = buffer.indexOf("\n\n")) !== -1) {
+        const bloque = buffer.slice(0, fin);
+        buffer = buffer.slice(fin + 2);
+        for (const linea of bloque.split("\n")) {
+          if (!linea.startsWith("data:")) continue;
+          const evento = JSON.parse(linea.slice(5).trim());
+          if (evento.tipo === "guia" || evento.tipo === "final") {
+            consumir(evento.turno, evento.tipo === "final");
+          } else if (evento.tipo === "error") {
+            throw new Error("backend");
+          }
+        }
+      }
+    };
+    for (;;) {
+      const { done, value } = await lector.read();
+      if (value) procesar(decodificador.decode(value, { stream: !done }));
+      if (done) break;
+    }
+    if (!eventos) consumir(await pedirTurnoClasico(cuerpo, timeoutMs), true);
+  } catch (error) {
+    // Si la guía ya se mostró, queda como respuesta válida: no reintentamos
+    // (reenviar duplicaría el turno en el servidor) y no mostramos error.
+    if (eventos) return;
+    throw error;
+  } finally {
+    clearTimeout(temporizador);
+  }
+}
+
 async function enviarTurno(cuerpo, textoVisible, origen, alFallar) {
   if (esperando || !sesionId) return;
   esperando = true;
@@ -592,25 +660,53 @@ async function enviarTurno(cuerpo, textoVisible, origen, alFallar) {
   }
   const burbuja = agregar(textoVisible, "user", origen);
   vibrar(10);
-  const pedido = llamar("/api/chat", { sesion_id: sesionId, ...cuerpo });
+  const inicio = performance.now();
+  let escribiendo = null;
+  let burbujaRespuesta = null;
+  let primerTurno = null;
+  let pintado = null;
+  const alTurno = (turno, esFinal) => {
+    sesionId = turno.sesion_id;
+    if (!primerTurno) {
+      primerTurno = turno;
+      const espera = MINIMO_PENSANDO_MS - (performance.now() - inicio);
+      pintado = new Promise((resolver) => {
+        setTimeout(() => {
+          if (escribiendo) {
+            escribiendo.remove();
+            escribiendo = null;
+          }
+          burbujaRespuesta = agregar(primerTurno.respuesta, "bot");
+          mostrarEscala(primerTurno.escala_pendiente);
+          pintarDictamen(primerTurno.dictamen, primerTurno.hechos);
+          resolver();
+        }, Math.max(0, espera));
+      });
+    } else if (!burbujaRespuesta) {
+      primerTurno = turno;
+    } else if (esFinal && turno.respuesta !== burbujaRespuesta.textContent) {
+      burbujaRespuesta.textContent = turno.respuesta;
+      mensajes.scrollTop = mensajes.scrollHeight;
+    }
+  };
+  const pedido = leerStreamTurno({ sesion_id: sesionId, ...cuerpo }, alTurno);
   pedido.catch(() => {});
   await burbuja.llegada;
-  const escribiendo = agregarEscribiendo();
+  if (!burbujaRespuesta) escribiendo = agregarEscribiendo();
   try {
-    const turno = await pedido;
-    sesionId = turno.sesion_id;
-    escribiendo.remove();
-    agregar(turno.respuesta, "bot");
-    mostrarEscala(turno.escala_pendiente);
-    pintarDictamen(turno.dictamen, turno.hechos);
+    await pedido;
+    if (pintado) await pintado;
+    if (!burbujaRespuesta) throw new Error("vacio");
   } catch (error) {
-    escribiendo.remove();
-    burbuja.remove();
-    if (alFallar) alFallar();
-    if (error && error.name === "AbortError") {
-      agregar("Me está tomando más tiempo del esperado. Podés probar de nuevo.", "bot");
-    } else {
-      agregar("Se cortó la conexión. Podés probar de nuevo.", "bot");
+    if (escribiendo) escribiendo.remove();
+    if (!burbujaRespuesta) {
+      burbuja.remove();
+      if (alFallar) alFallar();
+      if (error && error.name === "AbortError") {
+        agregar("Me está tomando más tiempo del esperado. Podés probar de nuevo.", "bot");
+      } else {
+        agregar("Se cortó la conexión. Podés probar de nuevo.", "bot");
+      }
     }
   } finally {
     esperando = false;

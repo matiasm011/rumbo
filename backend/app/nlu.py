@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import unicodedata
 from dataclasses import dataclass
 
@@ -220,6 +221,18 @@ class ExtractorHechos:
         )
         self.modelo = modelo or os.getenv("OLLAMA_MODEL", "llama3.2:3b")
         self.timeout = timeout
+        self._cliente: httpx.Client | None = None
+        self._candado = threading.Lock()
+
+    def _http(self) -> httpx.Client:
+        """Cliente HTTP compartido: reutiliza la conexión con Ollama."""
+        cliente = self._cliente
+        if cliente is None:
+            with self._candado:
+                if self._cliente is None:
+                    self._cliente = httpx.Client(timeout=self.timeout)
+                cliente = self._cliente
+        return cliente
 
     def extraer(
         self, mensaje: str, pendientes: tuple[str, ...], pregunta_actual: str | None
@@ -253,24 +266,23 @@ Pendientes: {", ".join(pendientes) or "ninguna"}.
 Pregunta que se le hizo al estudiante: {pregunta_actual or "ninguna"}.
 Mensaje del estudiante: {mensaje}
 """
-        with httpx.Client(timeout=self.timeout) as cliente:
-            respuesta = cliente.post(
-                f"{self.host}/api/chat",
-                json={
-                    "model": self.modelo,
-                    "stream": False,
-                    "format": "json",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "Respondé únicamente JSON válido.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                },
-            )
-            respuesta.raise_for_status()
-            contenido = respuesta.json()["message"]["content"]
+        respuesta = self._http().post(
+            f"{self.host}/api/chat",
+            json={
+                "model": self.modelo,
+                "stream": False,
+                "format": "json",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Respondé únicamente JSON válido.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            },
+        )
+        respuesta.raise_for_status()
+        contenido = respuesta.json()["message"]["content"]
         return _parsear_hechos(contenido)
 
 

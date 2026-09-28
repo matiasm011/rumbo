@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from difflib import get_close_matches
@@ -203,7 +204,28 @@ class Dialogo:
         if sesion is None:
             sesion = Sesion(id=str(uuid4()))
             self._sesiones[sesion.id] = sesion
+        return self._responder_impl(sesion, mensaje, valor)
 
+    def responder_guia(
+        self, sesion_id: str | None, mensaje: str = "", valor: int | None = None
+    ) -> Turno:
+        """Guía determinística instantánea, sin llamar al LLM.
+
+        Corre sobre una copia de la sesión con un diálogo sin generador:
+        no muta el estado real y devuelve el mismo texto que _turno usaría
+        como guía. Sirve para mostrar algo al instante mientras se genera
+        la versión final.
+        """
+        sesion = self._sesiones.get(sesion_id or "")
+        if sesion is None:
+            sesion = Sesion(id=sesion_id or str(uuid4()))
+        else:
+            sesion = copy.deepcopy(sesion)
+        return Dialogo(generador=None)._responder_impl(sesion, mensaje, valor)
+
+    def _responder_impl(
+        self, sesion: Sesion, mensaje: str = "", valor: int | None = None
+    ) -> Turno:
         if valor is not None:
             if isinstance(valor, bool) or not isinstance(valor, int) or not 1 <= valor <= 10:
                 raise ValueError("El valor debe estar entre 1 y 10")

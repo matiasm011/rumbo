@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -14,8 +17,25 @@ from app.motor_difuso import inferir
 from app.reglas import REGLAS
 
 ESTATICOS = Path(__file__).resolve().parent.parent / "static"
-dialogo = Dialogo(generador=GeneradorRespuestas())
-app = FastAPI(title="Rumbo", version="1.0.0")
+generador = GeneradorRespuestas()
+dialogo = Dialogo(generador=generador)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Carga el modelo en segundo plano: el primer turno no paga la espera.
+    threading.Thread(target=_precalentar_fondo, daemon=True).start()
+    yield
+
+
+def _precalentar_fondo() -> None:
+    try:
+        generador.precalentar()
+    except Exception:
+        pass
+
+
+app = FastAPI(title="Rumbo", version="1.0.0", lifespan=lifespan)
 
 
 class ChatIn(BaseModel):
@@ -41,6 +61,35 @@ def abrir_sesion():
 def chat(cuerpo: ChatIn):
     turno = dialogo.responder(cuerpo.sesion_id, cuerpo.mensaje, cuerpo.valor)
     return _turno_json(turno)
+
+
+@app.post("/api/chat/stream")
+def chat_stream(cuerpo: ChatIn):
+    """Guía instantánea + versión generativa, en dos eventos SSE.
+
+    El evento "guia" sale en milisegundos (sin LLM) para que la UI pinte
+    algo ya; el evento "final" llega con la redacción del modelo.
+    """
+
+    def eventos():
+        try:
+            guia = dialogo.responder_guia(cuerpo.sesion_id, cuerpo.mensaje, cuerpo.valor)
+        except Exception as exc:  # noqa: BLE001 — sin guía no hay nada que mostrar
+            yield _sse({"tipo": "error", "detalle": str(exc)})
+            return
+        yield _sse({"tipo": "guia", "turno": _turno_json(guia)})
+        try:
+            final = dialogo.responder(cuerpo.sesion_id, cuerpo.mensaje, cuerpo.valor)
+        except Exception as exc:  # noqa: BLE001 — la guía ya se mostró
+            yield _sse({"tipo": "error", "detalle": str(exc)})
+            return
+        yield _sse({"tipo": "final", "turno": _turno_json(final)})
+
+    return StreamingResponse(eventos(), media_type="text/event-stream")
+
+
+def _sse(evento: dict) -> str:
+    return "data: " + json.dumps(evento, ensure_ascii=False) + "\n\n"
 
 
 @app.post("/api/inferir")

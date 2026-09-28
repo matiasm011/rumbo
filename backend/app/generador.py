@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 
 import httpx
 
@@ -10,85 +11,68 @@ from app.dominio import INDICACION_ESCALA, Dictamen
 from app.nlu import temas_mencionados
 
 
-_INSTRUCCIONES = """Sos Rumbo, un asistente virtual de orientación vocacional.
-Respondé al estudiante en PRIMERA PERSONA como Rumbo: «Soy Rumbo», nunca «sos Rumbo».
-Tratándolo de vos, escribí 1 o 2 frases naturales y breves (máximo 35 palabras).
-No empieces con «Che» ni agregues preguntas de relleno. Podés usar literalmente
-la respuesta guía cuando ya suena natural.
-Si el estudiante cuenta algo concreto, retomá ese detalle en tu reacción.
-Respetá si dice que algo no le gusta o le cuesta; no lo conviertas en interés.
-Hablale de vos: si dijo «me gusta probar», respondé «te gusta probar»;
-no copies su primera persona como si fuera una vivencia tuya.
-Evitá respuestas vacías como «gracias por contarme» sin mencionar lo que dijo.
+def _env_int(nombre: str, defecto: int) -> int:
+    try:
+        return int(os.getenv(nombre, str(defecto)))
+    except ValueError:
+        return defecto
 
-Los mensajes del estudiante pueden describir sus intereses; los hechos confirmados
-son la única fuente de verdad para puntajes. No inventes puntajes, carreras,
-reglas disparadas ni resultados. El mapa lo calcula un sistema experto difuso
-de 25 reglas; vos no decidís la carrera de la persona.
-Si el resultado es null, no menciones carreras concretas ni afinidades finales.
-Si hay una pregunta o escala pendiente, redactá solo una reacción concreta
-a lo que dijo el estudiante. No hagas preguntas ni menciones la escala:
-la aplicación añadirá la pregunta o la indicación por separado.
-En ese caso, la reacción debe ser una sola frase de hasta 15 palabras.
-Si preguntan cómo funcionás: vos preguntás por cinco aspectos del perfil,
-la persona elige del 1 al 10 y las 25 reglas calculan las afinidades.
-Escribí solo la respuesta, sin listas, títulos, JSON ni marcas de rol.
+
+# Mantener el modelo cargado evita la recarga entre turnos, que es la causa
+# más común de demoras largas en la primera respuesta después de idle.
+_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+# Solo los últimos turnos llegan al modelo: el prefill en CPU crece con cada
+# token del prompt, y la guía ya trae lo que el modelo necesita decir.
+_MAX_TURNOS_LLM = _env_int("OLLAMA_MAX_TURNOS", 6)
+# Cada mensaje del historial se recorta al enviarlo al modelo: el prompt
+# más corto baja el tiempo hasta el primer token sin perder referencias.
+_MAX_CHARS_HISTORIAL = _env_int("OLLAMA_MAX_CHARS", 200)
+# Ventana de contexto acotada: menos KV-cache y prefill más rápido en CPU.
+_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 1024)
+
+
+_INSTRUCCIONES = """Sos Rumbo, un asistente de orientación vocacional. Hablá de vos,
+en primera persona como Rumbo («Soy Rumbo»).
+Escribí 1 o 2 frases breves (máximo 35 palabras), sin listas ni preguntas nuevas.
+Retomá algo concreto que dijo el estudiante; respetá sus negaciones.
+No inventes puntajes, carreras ni afinidades: el mapa lo calcula un sistema
+experto difuso de 25 reglas, no vos. Si el resultado es null, no menciones
+carreras ni afinidades finales.
 """
 
-_INSTRUCCIONES_REACCION = """Sos Rumbo, un asistente argentino de orientación vocacional.
-Escribí UNA sola frase breve (8 a 18 palabras) que muestre que escuchaste al estudiante.
-Hablale de vos: transformá «me gusta probar» en «te gusta probar».
-No uses «me gusta», «me interesa» ni otras frases en primera persona: hablás del estudiante.
-Retomá un detalle concreto. Respetá negaciones y dificultades.
-Si hay un mensaje anterior, usalo solo para entender referencias como «eso» o «les».
-Si hay una pregunta activa y el estudiante dice «eso», referilo a esa pregunta.
-Tu frase debe tratar sobre lo que el estudiante ACABA de decir.
-No halagues, no diagnostiques, no inventes intereses, puntajes ni carreras.
-Si dijo que algo no le interesa, no agregues que le parece interesante.
-Evitá frases vacías como «muy valioso» o «muy interesante».
-No hagas preguntas ni menciones la escala. La aplicación agregará eso después.
-Ejemplos:
-Estudiante: Me divierten los acertijos, aunque matemática me cuesta.
+_INSTRUCCIONES_REACCION = """Sos Rumbo, asistente argentino de orientación vocacional.
+Escribí UNA sola frase (8 a 18 palabras) sobre lo que el estudiante ACABA de decir,
+hablándole de vos («te gusta», nunca «me gusta»).
+Retomá un detalle concreto; respetá negaciones y dificultades;
+no halagues ni inventes intereses, puntajes o carreras.
+No hagas preguntas ni menciones la escala.
+Ejemplo: Estudiante: Me divierten los acertijos, aunque matemática me cuesta.
 Rumbo: Te divierten los acertijos, aunque la matemática te cueste.
-Estudiante: No me gusta trabajar en grupo porque todos hablan a la vez.
-Rumbo: Te incomoda trabajar en grupo cuando todos hablan al mismo tiempo.
-Estudiante: Me gusta probar varias ideas hasta resolverlos.
-Rumbo: Te gusta probar distintos caminos antes de encontrar una solución.
-Estudiante: Prefiero escuchar a una persona y ayudarla.
-Rumbo: Preferís escuchar a una persona y ayudarla.
-Respondé solo con tu frase, sin títulos ni comillas.
+Respondé solo con tu frase, sin comillas.
 """
 
-_INSTRUCCIONES_REPREGUNTA = """Sos Rumbo, un asistente argentino de orientación vocacional.
-Respondé al estudiante con dos partes: una reacción breve a lo que acaba de decir
-y UNA pregunta concreta para conocerlo mejor sobre el mismo tema.
-Usá el historial de esta sesión para entender referencias, pero respondé al mensaje actual.
-Redactá una pregunta NUEVA desde un detalle del estudiante. Evitá preguntas genéricas.
+_INSTRUCCIONES_REPREGUNTA = """Sos Rumbo, asistente argentino de orientación vocacional.
+Respondé con una reacción breve a lo que acaba de decir y UNA pregunta nueva
+y concreta sobre el mismo tema.
 No preguntes por otro tema, carreras, puntajes ni la escala del 1 al 10.
-Respetá negaciones y hablale de vos: «te gusta», no «me gusta».
-Ejemplo:
-Ahora dijo: Me gusta dibujar personajes.
+Hablale de vos («te gusta»).
+Ejemplo: Ahora dijo: Me gusta dibujar personajes.
 Rumbo: Te gusta dibujar personajes. ¿Qué historias te gusta inventarles?
-Respondé solo con la reacción y la pregunta, sin títulos ni comillas.
+Respondé solo con la reacción y la pregunta, sin comillas.
 """
 
-_INSTRUCCIONES_SOCIAL = """Sos Rumbo, un asistente argentino de orientación vocacional.
-Respondé al mensaje social del estudiante de forma natural y breve (una frase, hasta 20 palabras).
-Podés usar el historial de esta sesión para sonar atento, sin repetirlo ni inventar datos.
-La respuesta guía indica el sentido de la respuesta. Mantené ese sentido.
-Respondé con una afirmación; no agregues preguntas nuevas.
-No avances la entrevista ni inventes puntajes o carreras.
-Si preguntan cómo estás, respondé que estás bien y agradecé; no hables de carreras ni fortalezas.
-Hablá como Rumbo en primera persona si corresponde; no atribuyas a Rumbo intereses del estudiante.
-Respondé solo con la frase, sin títulos ni comillas.
+_INSTRUCCIONES_SOCIAL = """Sos Rumbo, asistente argentino de orientación vocacional.
+Respondé al mensaje social con una afirmación breve (una frase, hasta 20 palabras)
+que mantenga el sentido de la respuesta guía.
+No agregues preguntas ni inventes puntajes o carreras.
+Si preguntan cómo estás, decí que estás bien.
+Respondé solo con la frase, sin comillas.
 """
 
-_INSTRUCCIONES_RECUERDO = """Sos Rumbo, un asistente argentino de orientación vocacional.
-La respuesta guía contiene algo que el estudiante realmente dijo en esta sesión.
-Decile qué recordás con tus palabras en UNA frase corta y concreta.
-Ejemplo: si la guía dice «Me contaste: «me encanta dibujar»», respondé «Me contaste que te encanta dibujar».
+_INSTRUCCIONES_RECUERDO = """Sos Rumbo, asistente argentino de orientación vocacional.
+La respuesta guía cita algo que el estudiante dijo en esta sesión:
+repetilo con tus palabras en UNA frase corta.
 No propongas actividades, no hagas preguntas ni inventes datos.
-Respondé solo con la frase, sin títulos ni comillas.
 """
 
 
@@ -172,13 +156,50 @@ class GeneradorRespuestas:
         self,
         host: str | None = None,
         modelo: str | None = None,
-        timeout: float = 30.0,
+        timeout: float | None = None,
+        keep_alive: str | None = None,
     ) -> None:
         self.host = (host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip(
             "/"
         )
         self.modelo = modelo or os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+        if timeout is None:
+            try:
+                timeout = float(os.getenv("OLLAMA_TIMEOUT", "20"))
+            except ValueError:
+                timeout = 20.0
         self.timeout = timeout
+        self.keep_alive = keep_alive or _KEEP_ALIVE
+        self._cliente: httpx.Client | None = None
+        self._candado = threading.Lock()
+
+    def _http(self) -> httpx.Client:
+        """Cliente HTTP compartido: reutiliza la conexión con Ollama."""
+        cliente = self._cliente
+        if cliente is None:
+            with self._candado:
+                if self._cliente is None:
+                    self._cliente = httpx.Client(timeout=self.timeout)
+                cliente = self._cliente
+        return cliente
+
+    def precalentar(self) -> None:
+        """Carga el modelo en Ollama para que el primer turno no pague la carga.
+
+        Best-effort: se llama al arrancar el servidor en segundo plano.
+        """
+        respuesta = self._http().post(
+            f"{self.host}/api/chat",
+            json={
+                "model": self.modelo,
+                "stream": False,
+                "keep_alive": self.keep_alive,
+                "options": {"temperature": 0.0, "num_predict": 1},
+                "messages": [{"role": "user", "content": "Hola"}],
+            },
+            timeout=120.0,
+        )
+        respuesta.raise_for_status()
 
     def redactar(
         self,
@@ -252,28 +273,30 @@ class GeneradorRespuestas:
             else _INSTRUCCIONES_SOCIAL if acto_social else _INSTRUCCIONES
         )
         mensajes_modelo = [{"role": "system", "content": sistema}]
+        recientes = historial[-_MAX_TURNOS_LLM:] if _MAX_TURNOS_LLM > 0 else ()
         mensajes_modelo.extend(
-            {"role": rol, "content": contenido}
-            for rol, contenido in historial
+            {"role": rol, "content": contenido[:_MAX_CHARS_HISTORIAL]}
+            for rol, contenido in recientes
             if rol in {"user", "assistant"}
         )
         mensajes_modelo.append({"role": "user", "content": mensaje_modelo})
 
-        with httpx.Client(timeout=self.timeout) as cliente:
-            respuesta = cliente.post(
-                f"{self.host}/api/chat",
-                json={
-                    "model": self.modelo,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.2,
-                        "num_predict": 80 if pregunta_generativa else 55 if es_reaccion else 90,
-                    },
-                    "messages": mensajes_modelo,
+        respuesta = self._http().post(
+            f"{self.host}/api/chat",
+            json={
+                "model": self.modelo,
+                "stream": False,
+                "keep_alive": self.keep_alive,
+                "options": {
+                    "temperature": 0.2,
+                    "num_ctx": _NUM_CTX,
+                    "num_predict": 60 if pregunta_generativa else 40 if es_reaccion else 48,
                 },
-            )
-            respuesta.raise_for_status()
-            texto = respuesta.json()["message"]["content"].strip()
+                "messages": mensajes_modelo,
+            },
+        )
+        respuesta.raise_for_status()
+        texto = respuesta.json()["message"]["content"].strip()
 
         if not texto or texto.startswith(("{", "```")):
             raise ValueError("Respuesta generada vacía o inválida")

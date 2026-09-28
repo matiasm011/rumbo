@@ -5,8 +5,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # Si más adelante WSL ve la GPU, descomentá:
-    # gpus: all
+    gpus: all
 
   ollama-init:
     image: ollama/ollama:latest

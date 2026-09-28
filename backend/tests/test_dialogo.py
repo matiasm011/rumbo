@@ -276,3 +276,31 @@ def test_duda_no_cierra_ni_puntua_la_escala():
     assert duda.hechos == {}
     assert duda.escala_pendiente == "analitico"
     assert "1 al 10" in duda.respuesta
+
+
+def test_responder_guia_no_muta_la_sesion_y_anticipa_la_respuesta():
+    dialogo = Dialogo()
+    inicio = dialogo.iniciar()
+    guia = dialogo.responder_guia(inicio.sesion_id, "me gustan los números")
+    assert guia.usado_llm is False
+    assert guia.sesion_id == inicio.sesion_id
+    assert guia.escala_pendiente is None
+    # La guía no avanzó la sesión real: el turno real sigue el flujo normal.
+    repregunta = dialogo.responder(inicio.sesion_id, "me gustan los números")
+    assert repregunta.respuesta == guia.respuesta
+    assert repregunta.escala_pendiente is None
+    assert "resolver un problema" in repregunta.respuesta
+    libre = dialogo.responder(inicio.sesion_id, "me gusta encontrar la solución")
+    assert libre.escala_pendiente == "analitico"
+
+
+def test_responder_guia_con_valor_no_registra_el_hecho():
+    dialogo = Dialogo()
+    inicio = dialogo.iniciar()
+    dialogo.responder(inicio.sesion_id, "me gustan los números")
+    dialogo.responder(inicio.sesion_id, "me gusta encontrar la solución")
+    guia = dialogo.responder_guia(inicio.sesion_id, valor=8)
+    assert guia.hechos == {}
+    assert "Anotado: 8/10." in guia.respuesta
+    puntuado = dialogo.responder(inicio.sesion_id, valor=8)
+    assert puntuado.hechos == {"analitico": 8.0}

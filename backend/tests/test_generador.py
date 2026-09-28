@@ -695,3 +695,50 @@ def test_generador_rechaza_preguntas_de_relleno(monkeypatch):
             pregunta_pendiente=None,
             dictamen=None,
         )
+
+
+def test_generador_acota_historial_y_reutiliza_la_conexion(monkeypatch):
+    peticiones = []
+    fabricados = []
+
+    def responder(peticion):
+        peticiones.append(json.loads(peticion.content))
+        return httpx.Response(
+            200, json={"message": {"content": "Te gusta probar ideas nuevas."}}
+        )
+
+    cliente_real = httpx.Client
+
+    def fabrica(timeout):
+        fabricados.append(timeout)
+        return cliente_real(
+            transport=httpx.MockTransport(responder), timeout=timeout
+        )
+
+    monkeypatch.setattr("app.generador.httpx.Client", fabrica)
+
+    historial = tuple(
+        ("user" if i % 2 == 0 else "assistant", f"mensaje {i} " + "x" * 400)
+        for i in range(24)
+    )
+    pregunta = "¿Qué te suele pasar cuando tenés que resolver un problema o acertijo?"
+    generador = GeneradorRespuestas()
+    for _ in range(2):
+        generador.redactar(
+            mensaje="me gusta probar varias ideas",
+            respuesta_guia=f"Te escucho. {pregunta}",
+            hechos={},
+            pregunta_pendiente=pregunta,
+            dictamen=None,
+            historial=historial,
+        )
+
+    cuerpo = peticiones[0]
+    # system + últimos turnos + mensaje actual, no los 24 turnos enteros
+    assert len(cuerpo["messages"]) <= 1 + 6 + 1
+    assert cuerpo["messages"][-2]["content"].startswith("mensaje 23")
+    for item in cuerpo["messages"][1:-1]:
+        assert len(item["content"]) <= 200
+    assert cuerpo["options"]["num_ctx"] <= 2048
+    assert cuerpo["options"]["num_predict"] <= 40
+    assert len(fabricados) == 1

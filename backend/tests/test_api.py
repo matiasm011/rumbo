@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -49,3 +51,22 @@ def test_chat_expone_escala_y_recibe_valor_interactivo(monkeypatch):
     assert puntuado["escala_pendiente"] is None
     assert puntuado["hechos"] == {"analitico": 8.0}
     assert puntuado["pendientes"][0] == "social"
+
+
+def test_chat_stream_envia_guia_instantanea_y_final(monkeypatch):
+    monkeypatch.setattr(main, "dialogo", Dialogo())
+    inicio = cliente.post("/api/sesion").json()
+    respuesta = cliente.post(
+        "/api/chat/stream",
+        json={"sesion_id": inicio["sesion_id"], "mensaje": "me gustan los números"},
+    )
+    assert respuesta.status_code == 200
+    eventos = [
+        json.loads(linea[5:].strip())
+        for linea in respuesta.text.splitlines()
+        if linea.startswith("data:")
+    ]
+    assert [evento["tipo"] for evento in eventos] == ["guia", "final"]
+    assert eventos[0]["turno"]["respuesta"] == eventos[1]["turno"]["respuesta"]
+    assert eventos[0]["turno"]["sesion_id"] == inicio["sesion_id"]
+    assert "resolver un problema" in eventos[1]["turno"]["respuesta"]
