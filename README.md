@@ -5,15 +5,25 @@ Sistema experto difuso de **25 reglas Mamdani**. Rumbo pregunta por cada tema y 
 Rumbo conserva el intercambio de cada sesión por separado y envía a Ollama los últimos 6 mensajes del estudiante y del asistente como contexto (la memoria completa de la sesión se usa para armar la respuesta guía). Al abrir una conversación nueva o reiniciar, el contexto anterior no se comparte. La memoria vive en el proceso de la app y se pierde al reiniciarlo.
 Ollama también puede redactar una repregunta a partir de lo que contó el estudiante. La app verifica que siga en el tema y conserva la pregunta guía si la propuesta no encaja; la escala aparece cuando corresponde en el flujo.
 
-## Levantar
+## Levantar (un solo comando)
 
 Hace falta Docker Desktop con integración WSL activada en esta distro.
 
 ```bash
+git clone https://github.com/matiasm011/rumbo.git
+cd rumbo
 docker compose up --build
 ```
 
-La primera vez `ollama-init` baja `llama3.2:3b` (unos 2 GB). La app ya sirve en [http://localhost:8000](http://localhost:8000) aunque el pull no haya terminado: sin modelo, el chat responde con textos guía y la escala sigue funcionando.
+Abrir [http://localhost:8000](http://localhost:8000).
+
+La primera vez `ollama-init` baja `llama3.2:3b` (unos 2 GB, varios minutos según la conexión). No hace falta esperar: la app ya responde con textos guía, la escala del 1 al 10 sigue funcionando y el dictamen (sistema de 25 reglas) no depende del LLM. Cuando el modelo termina de bajar, las respuestas se vuelven generativas solas.
+
+Sin GPU el LLM tarda unos segundos por turno en CPU; la guía instantánea aparece siempre al momento. Con NVIDIA en WSL, para respuestas de ~1s:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
 
 ## Sin Docker (dev)
 

@@ -5,7 +5,8 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    gpus: all
+    # Sin GPU anda igual (CPU), solo más lento el LLM.
+    # Con NVIDIA en WSL: agregar -f docker-compose.gpu.yml al comando.
 
   ollama-init:
     image: ollama/ollama:latest
