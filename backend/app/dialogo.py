@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from uuid import uuid4
 
@@ -216,12 +216,26 @@ class Dialogo:
         como guía. Sirve para mostrar algo al instante mientras se genera
         la versión final.
         """
-        sesion = self._sesiones.get(sesion_id or "")
-        if sesion is None:
-            sesion = Sesion(id=sesion_id or str(uuid4()))
+        real = self._sesiones.get(sesion_id or "")
+        if real is None:
+            copia = Sesion(id=sesion_id or str(uuid4()))
         else:
-            sesion = copy.deepcopy(sesion)
-        return Dialogo(generador=None)._responder_impl(sesion, mensaje, valor)
+            copia = copy.deepcopy(real)
+        turno = Dialogo(generador=None)._responder_impl(copia, mensaje, valor)
+        if real is None:
+            return turno
+        # La guía anticipa el texto; los hechos los confirma el turno final.
+        return replace(
+            turno,
+            hechos=dict(real.hechos),
+            pendientes=_pendientes(real.hechos),
+            dictamen=real.dictamen,
+            escala_pendiente=(
+                real.pregunta_actual
+                if real.esperando_escala and real.dictamen is None
+                else None
+            ),
+        )
 
     def _responder_impl(
         self, sesion: Sesion, mensaje: str = "", valor: int | None = None
