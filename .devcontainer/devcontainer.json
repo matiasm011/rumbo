@@ -12,5 +12,6 @@
     }
   },
   "postCreateCommand": "docker compose up -d --build",
+  "postStartCommand": "docker compose up -d",
   "waitFor": "postCreateCommand"
 }
