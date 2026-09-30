@@ -1,3 +1,14 @@
+---
+title: Rumbo
+emoji: 🧭
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 7860
+short_description: Chatbot de orientación vocacional con sistema experto difuso
+---
+
 # Rumbo — chatbot de orientación vocacional (SED)
 
 Sistema experto difuso de **25 reglas Mamdani**. Rumbo pregunta por cada tema y muestra una escala interactiva del 1 al 10 dentro del chat. Esos valores forman el perfil; Ollama (opcional) redacta respuestas breves. El dictamen lo calcula el sistema experto, no el LLM.
@@ -24,6 +35,16 @@ Sin GPU el LLM tarda unos segundos por turno en CPU; la guía instantánea apare
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
+
+## Demo pública (Hugging Face Spaces, gratis)
+
+Espacio Docker: creá un Space con SDK `Docker` apuntando a este repo
+(puerto 7860). La app escucha en `$PORT` (7860 por defecto). Ollama corre
+en el mismo contenedor: el primer arranque baja `llama3.2:3b` (unos 2 GB,
+varios minutos) en segundo plano; mientras tanto el chat responde con
+textos guía y el dictamen del sistema experto es el mismo. En CPU gratis
+cada turno generativo tarda unos segundos. Sin tarjeta, con un link
+público para abrir en el navegador.
 
 ## Sin Docker (dev)
 
